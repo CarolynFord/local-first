@@ -1,0 +1,120 @@
+---
+title: "CF Week 11 project - create new plot"
+author: "Carolyn Ford"
+date: '2022-05-22'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+## Create new plot - tree map
+
+```{r}
+
+# load libraries
+library(tidyverse)
+library(hrbrthemes)
+library(scales)
+library(ggtext)
+library(ggalt)
+library(ggfittext)
+library(treemapify)
+library(patchwork)
+library(vegan)
+library(janitor)
+library(ggpmisc)
+
+# load data
+lift_data <- read_rds("data/lift-data.rds")
+```
+
+```{r}
+# create treemap
+
+# create customer counts
+customer_count <- count(lift_data, c(zip_code:channel)) %>% 
+  clean_names()
+
+# create sums of spend by zip_code:channel
+history_sum <- lift_data %>%
+  group_by(c(zip_code:channel)) %>%
+  summarise(sum = sum(history)) %>% 
+  clean_names()
+
+# create average value by zip_code:channel
+avg_channel_value <- lift_data %>% 
+  group_by(c(zip_code:channel)) %>% 
+  summarize(avg = mean(history)) %>% 
+  clean_names()
+
+# create data frame for treemap
+treemap_data <- left_join(customer_count, history_sum) %>% 
+  clean_names() %>% 
+  mutate(sum = round(sum, digits = 0))
+
+# create next version of data frame for treemap, with average value
+treemap_data1 <- left_join(treemap_data, avg_channel_value) %>% 
+clean_names() %>% 
+  mutate(avg_value = round(avg, digits = 0))
+
+# create treemap with total value by customer segment
+p1 <- ggplot(treemap_data1, 
+             aes(area = n, 
+                 fill = sum,
+                 label = str_glue('{c_zip_code_channel}\n ${sum}'))) +
+  geom_treemap() +
+  geom_treemap_text(color = "white",
+                    grow = FALSE) +
+  # labs(title = "Suburban customers using the web are the largest segment by value") +
+  theme(legend.position = "none")
+
+#p1
+
+# create treemap with average value by customer segment
+p2 <- ggplot(treemap_data1, 
+             aes(area = avg_value, 
+                 fill = n,
+                 label = str_glue('{c_zip_code_channel}\n ${avg_value}'))) +
+  geom_treemap() +
+  geom_treemap_text(color = "white",
+                    grow = FALSE) +
+  # labs(title = "Our customer segment with the highest average value\nis Rural:Multichannel") +
+  theme(legend.position = "none")
+
+#p2
+
+# Align treemaps
+
+# with patchwork, align p1 and p2 in nice package
+patchwork <- p1 / p2
+patchwork + plot_annotation(
+  title = 'Suburban:Web segment is the total highest spend',
+  subtitle = 'but Rural:Multichannel customers are the average highest spenders',
+  #caption = "none"
+)
+# after fixing the table for ggplot, then re-define patchwork to
+# patchwork <- (p1 + p2) / p3 [the table of customer counts]
+
+# Create table of customer counts
+table_data <- lift_data %>%
+  tabyl(zip_code, channel) %>%
+  clean_names() %>% 
+  adorn_totals(c("row", "col")) %>%
+  adorn_percentages("row") %>% 
+  adorn_pct_formatting(rounding = "half up", digits = 0) %>%
+  adorn_ns() %>%
+  adorn_title("combined") # %>%
+  # knitr::kable()
+
+table_data
+
+# hand this over to ggplot
+# what do I hand over, table_data, lift_data or customer_count?
+# ggplot(customer_count, aes(c_zip_code_channel, n)) + 
+# geom_point() +
+# geom_table(customer_count, aes(x = c_zip_code_channel, y = n, label = tb))
+```
