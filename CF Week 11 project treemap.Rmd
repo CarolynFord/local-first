@@ -27,6 +27,7 @@ library(patchwork)
 library(vegan)
 library(janitor)
 library(ggpmisc)
+library(gt)
 
 # load data
 lift_data <- read_rds("data/lift-data.rds")
@@ -98,7 +99,38 @@ patchwork + plot_annotation(
 )
 # after fixing the table for ggplot, then re-define patchwork to
 # patchwork <- (p1 + p2) / p3 [the table of customer counts]
+```
 
+```{r}
+(p1 + p2)
+```
+
+
+```{r}
+
+gt_table <- lift_data %>%
+  tabyl(zip_code, channel) %>%
+  clean_names() %>%
+  adorn_totals(c("row", "col")) %>%
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(rounding = "half up", digits = 0) %>%
+  adorn_ns() %>%
+  adorn_title("combined") %>% 
+  as_tibble() %>% 
+  gt()
+
+gtsave(gt_table,
+       "gt_table.png")
+
+png_gt_table <- png::readPNG("gt_table.png", native = TRUE) 
+```
+
+```{r}
+(p1 + p2) / png_gt_table
+```
+
+
+```{r}
 # Create table of customer counts
 table_data <- lift_data %>%
   tabyl(zip_code, channel) %>%
