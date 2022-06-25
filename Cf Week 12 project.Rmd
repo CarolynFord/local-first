@@ -26,9 +26,9 @@ library(gt)
 ```
 
 ```{r load data, include=FALSE}
-setwd("~/R in 3 Months/CF Measure Lift")
+# setwd("~/R in 3 Months/CF Measure Lift")
 
-lift_data <- read_csv("data-raw/Data-mining-challenge.csv") %>% 
+lift_data <- read_csv("data/Data-mining-challenge.csv") %>% 
   clean_names()
 
 options(scipen = 999)
