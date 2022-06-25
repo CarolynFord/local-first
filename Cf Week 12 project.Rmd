@@ -1,0 +1,353 @@
+---
+title: "Marketing campaign analysis"
+author: "Carolyn Ford"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, message = FALSE, warning = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+```{r load libraries, message=FALSE, include=FALSE}
+library(tidyverse)
+library(skimr)
+library(janitor)
+library(car)
+library(psych)
+library(tidyverse)
+library(skimr)
+library(scales)
+library(lattice)
+library(latticeExtra)
+library(knitr)
+library(readr)
+library(gt)
+```
+
+```{r load data, include=FALSE}
+setwd("~/R in 3 Months/CF Measure Lift")
+
+lift_data <- read_csv("data-raw/Data-mining-challenge.csv") %>% 
+  clean_names()
+
+options(scipen = 999)
+```
+
+### Introduction
+
+We recently conducted an email marketing campaign aimed at our base of 64,000 customers with the purpose of increasing visits and spend. In the past 12 months we have earned $`r sum(lift_data$history)` from this customer base. Having sent a marketing email to 2/3 of our customers, we yielded $`r sum(lift_data$spend)` of additional revenue. The dataset is provided by Kevin Hillstrom, [Mine that data e-mail analytics data mining challenge, 2008 03 20](https://blog.minethatdata.com/2008/03/minethatdata-e-mail-analytics-and-data.html)
+
+The customer database includes the following fields:
+
+- **Recency** - time elapsed since last purchase, months
+- **History segment** - one of seven categories from low spend to high
+- **History** - value of the spend, continuous
+- **Mens** - a binary variable, whether purchases from mens product line occurred
+- **Womens** - a binary variable, whether purchases from womens product line occurred
+- **Zip code** - location description of customers, segmented into Rural, Suburban or Urban
+- **Newbie** - reflecting whether the customer is a new one, or previous
+- **Channel** - multi-channel, phone or web
+- **Segment** - the marketing treatment received: either no email (control), men's focused email (treatment) or women's focused email (treatment)
+- **Visit** - a binary variable reflecting whether a visit to one of the channels occurred after the marketing campaign
+- **Conversion** - a binary variable reflecting whether spend occurred after the visit
+- **Spend** - the value of the spend, if it occurred
+
+Our goal in this report is to understand our customer base from Recency-Monetary Value and campaign lift perspectives. Finally, we will offer a recommendation as to which customers to cull from our database in an effort to reduce marketing costs while maintaining or enhancing revenue. 
+
+### Our customer base 
+
+Looking at recency of purchases first, we can see that a plurality of customers have purchased recently (within the last two months), or more distantly (beyond nine months).
+
+```{r recency}
+hist(lift_data$recency,
+     main = "Recent purchases - peaks at 1 and 10 months",
+     xlab = "# of months since last purchase",
+     ylab = "Count",
+     breaks = 13,
+     col = "lightblue",
+     freq = TRUE,
+     xaxt = "n")
+axis(side = 1, at = seq(0, 13, by = 1))
+
+# ggplot(lift_data,
+#       mapping = aes(x = recency)) +
+#  geom_bar(color = "lightblue", fill = "lightblue") +
+#  scale_x_continuous(limits = c(0,12), breaks =  c(1,2,3,4,5,6,7,8,9,10,11,12)) +
+#  labs(title = "While many customers made purchases 1 month ago...",
+#       subtitle = "for others it's 9 or more months since their last purchase",
+#       x = "# of months since last purchase",
+#       y = "Count") +
+#  theme_minimal()
+```
+
+Looking at the value of their spend over the past 12 months, we can see that many customers purchased nothing at all. For those who did spend, the bulk of purchases summed to less than $500.
+
+```{r history of spend}
+par(mfrow = c(1,2))
+hist(lift_data$history,
+     main = "Many spent $0 this year",
+     xlab = "Distribution of annual spend ($)",
+     ylab = "Count of customers",
+     breaks = 60,
+     col = "lightblue",
+     freq = TRUE,
+     xaxt = "n")
+axis(side = 1, at = seq(0, 3500, by = 100))
+#lines(density(lift_data$history, bw = 10),
+#     type = "l", col = "darkred", lwd = 2)
+hist(log(lift_data$history),
+     main = "",
+     xlab = "...and log of annual spend ($)",
+     ylab = "",
+     breaks = 25,
+     col = "lightblue",
+     freq = TRUE
+     #xaxt = "y"
+     )
+#axis(side = 1, at = seq(0, 8, by = 1))
+#lines(density(lift_data$history, bw = 10),
+#    type = "l", col = "darkred", lwd = 2)
+```
+
+By looking at location and spend by channel, we see the importance of operating multi-channel versus solely by phone or by web.
+
+```{r location and spend}
+ggplot(lift_data,
+       mapping = aes(zip_code, history)) +
+  geom_boxplot() +
+  labs(title = "The multichannel segment has highest average spend,",
+       subtitle = "regardless of location",
+       x = "Location",
+       y = "Spend ($)") +
+  facet_wrap(~ channel) +
+  theme_minimal()
+
+```
+
+### Recency-Monetary Value Analysis
+
+We used RM analysis to create more nuanced customer segments.
+
+With Recency, we grouped by quintiles:
+
+* R5 - (1,2] months since last purchase
+* R4 - (2,4]
+* R3 - (4,7]
+* R2 - (7,10]
+* R1 - (10,12]
+
+With Monetary Value, we also grouped by quintiles:
+
+* M5 - ($382, $3345.93]
+* M4 - ($211, $382]
+* M3 - ($115, $211]
+* M2 - ($50.30, $115]
+* M1 - ($29.99, $50.30]
+
+As such, an RM segment of 55 refers to the count of customers who have made purchases within the last two months, and the monetary value of their purchases this past year total $382 or more. An RM segment of 11, in contrast, refers to the count of customers who made their most recent purchases 11 to 12 months ago, with value of $50.30 or less. 
+
+```{r RM analysis, include=FALSE}
+quantile(lift_data$recency, probs = c(0.2, 0.4, 0.6, 0.8))
+
+# Slice continuous data with cut()
+# first do recency
+lift_data$recency_fac <- cut(lift_data$recency,
+                   breaks = c(0,2,4,7,10,12),
+                   labels = FALSE,
+                   ordered_result = TRUE)
+
+# revise to make more recent values, higher
+lift_data <- lift_data %>%
+  mutate(recency_fac2 = case_when(
+    recency_fac == 1 ~ 50,
+    recency_fac == 2 ~ 40,
+    recency_fac == 3 ~ 30,
+    recency_fac == 4 ~ 20,
+    recency_fac == 5 ~ 10,
+    TRUE ~ NA_real_
+  )) 
+
+# now we turn our attention to history quantiles
+quantile(lift_data$history, probs = c(0,0.2,0.4,0.6,0.8,1.0))
+
+lift_data$history_fac <- cut(lift_data$history,
+                             breaks = c(29.000,50.298,115.280,210.810,382.032,3345.930),
+                             labels = FALSE,
+                             ordered_result = TRUE)
+
+# history values - high is already high, no need for case_when()
+
+# combine recency and history to create RM segments
+lift_data <- lift_data %>% 
+  mutate(RM = recency_fac2 + history_fac)
+
+table(lift_data$RM, lift_data$visit)
+```
+
+In the tables below we can see that our 'best' segment, RM 55 as the recent, high spenders provided the highest number of visits post campaign, as well as the highest spend. To be sure, we cannot live on a "diet" of RM 55s, so attracting customers from other RM segments to visit and spend at the store is important too:
+
+```{r create RM visit table, warning=FALSE, echo=FALSE}
+visit_table <- lift_data %>%
+  tabyl(RM, visit) %>%
+  clean_names() %>% 
+  adorn_totals(c("row", "col")) %>%
+  adorn_percentages("row") %>% 
+  adorn_pct_formatting(rounding = "half up", digits = 0) %>%
+  adorn_ns() %>%
+  adorn_title("combined")
+
+visit_table %>% 
+  knitr::kable()
+```
+
+```{r spend table, warning=FALSE, include=FALSE}
+spend_table <- lift_data %>%
+  tabyl(RM, spend) %>%
+  clean_names() %>% 
+  adorn_totals(c("row", "col")) %>%
+  adorn_percentages("row") %>% 
+  adorn_pct_formatting(rounding = "half up", digits = 0) %>%
+  adorn_ns() %>%
+  adorn_title("combined")
+
+spend_table %>% 
+  knitr::kable()
+
+# Create Spend by RM segment and assign to an object
+Spendby_RM <- aggregate(spend ~ RM, data = lift_data, sum)
+
+# customer base again, as table in kable
+kable(Spendby_RM, caption = "Post campaign spend by RM segment")
+
+# Highest spend segments - 5
+Spendby_RM %>% 
+  arrange(desc(spend)) %>% 
+  slice_max(spend, n = 5) %>% 
+  gt() %>% 
+  cols_label(
+    RM = "RM segment",
+    spend = "Post campaign spend"
+  ) %>% 
+  fmt_currency(
+    columns = vars(spend),
+    currency = "USD",
+    decimals = NULL
+  )
+
+# Lowest spend segments - 5
+Spendby_RM %>% 
+  arrange(desc(spend)) %>% 
+  slice_min(spend, n = 5) %>% 
+  gt() %>% 
+  cols_label(
+    RM = "RM segment",
+    spend = "Post campaign spend"
+  ) %>% 
+  fmt_currency(
+    columns = vars(spend),
+    currency = "USD",
+    decimals = NULL
+  )
+
+aggregate(spend ~ segment + RM, data = lift_data, sum)
+
+RM_segment_count <- lift_data %>% 
+  group_by(RM) %>% 
+  tally()
+
+Spendby_RM <- left_join(Spendby_RM, RM_segment_count) 
+Spendby_RM <- Spendby_RM %>% 
+  relocate(n, .before = spend)
+```
+
+```{r spend by RM viz, warning=FALSE, echo=FALSE}
+Spendby_RM %>% 
+  arrange(desc(spend)) %>% 
+  slice_max(spend, n = 10) %>% 
+  gt() %>% 
+  tab_header(
+    title = "Top 10 RM segments"
+  ) %>% 
+  cols_label(
+    RM = "RM segment",
+    n = "# of customers",
+    spend = "Post campaign spend"
+  ) %>% 
+  fmt_currency(
+    columns = vars(spend),
+    currency = "USD",
+    decimals = NULL
+  )
+```
+
+### Our email campaign
+
+To boost spend, we divided our customer base into three roughly equal segments and selected a treatment at random (Men's E-Mail, No E-Mail, Women's E-Mail). 
+
+First we look at the proportions that yielded visits, by treatment. We can see the Men's E-Mail yielded the highest proportion of visits to the store.
+
+```{r yield to visit}
+# lift by treatment segment
+# visit
+# table(lift_data$segment, lift_data$visit)
+# prop.table(table(lift_data$segment, lift_data$visit), margin = 1)
+
+barchart(prop.table(table(lift_data$segment, lift_data$visit), margin = 1)[, 2],
+         main = "The Mens E-Mail produced the highest proportion of visits",
+         xlab = "Visit proportion by treatment",
+         col = "lightblue")
+```
+
+Similarly, the Men's E-Mail yielded the highest conversion from the visit to spend stages:
+
+```{r visit to spend stage}
+barchart(prop.table(table(lift_data$segment, lift_data$conversion), margin = 1)[, 2],
+         main = "Mens E-Mail - the highest visit to spend conversion",
+         xlab = "Visit to spend conversion",
+         col = "lightblue")
+```
+
+Next, we look at sum of post campaign spend by treatment. By now, it is not surprising to see that the Men's E-Mail resulted in the highest revenue following the campaign:
+
+```{r post campaign spend}
+
+post_campaign_spend <- aggregate(lift_data$spend, by=list(segment = lift_data$segment), sum)
+
+ggplot(post_campaign_spend, aes(segment, x)) + 
+  geom_col(color = "lightblue", fill = "lightblue")+
+  labs(x = "Campaign treatment",
+       y = "Sum of spend ($)",
+       title = "The Men's E-Mail yielded the most spend",
+       subtitle = "while the Women's outproduced no treatment")+
+  theme_minimal()
+```
+
+```{r find the ones to remove, include=FALSE}
+remove_list <- lift_data[lift_data$history <= 44.04 &
+                           lift_data$visit == 0, ]
+
+remove_list %>% 
+  tally()
+
+# now check those who visited the store but did not convert to spend
+useless_browsers <- lift_data[lift_data$visit == 1 &
+                                lift_data$conversion == 0, ]
+
+useless_browsers %>% 
+  tally()
+```
+
+### Key Question
+
+If we had to eliminate 10,000 customers from receiving an e-mail campaign, which customers would we suppress from the campaign?
+
+There are `r remove_list %>% tally()` customers whose customer value over the past 12 months is less than $44.01 and who did not visit the store post campaign. As a result, if sending emails costs us money, then we should remove the 10,001 from the list, as they have the lowest probability of reaching the visit stage.
+
+Of note there are also `r useless_browsers %>% tally()` customers who visited the store post campaign, but who did not convert to a spend. Although out of the scope of our analysis here, it does cost us money to provide service to those customers. 
+
+## Conclusion
+
+We have explored our customer base by the Recency-Monetary Value method as well as by campaign treatments and lift to store visits and spend. 
+
+As a result of our analysis, we recommend removing customer segments with low RM value and/or non-response to our e-mail marketing from our next campaign. Because these segments did not visit, much less spend in the last 12 months, we can safely reduce the cost of marketing by about $10,000 while still yielding incremental revenue. Later, we may wish to consider surveys and focus groups to understand why these under performing segments are not purchasing from us, as we may need to update our products to enhance appeal to them. As much as we benefit from our most recent, high-spending customer segment - the RM 55s - we cannot live on a "diet" of high spenders alone.
